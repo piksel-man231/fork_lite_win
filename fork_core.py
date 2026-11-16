@@ -372,3 +372,12 @@ def visible_connections(connections: list[dict]) -> list[dict]:
     service_names = {"xray.exe", "xray", "sing-box.exe", "sing-box"}
     return [connection for connection in connections
             if connection_process(connection).casefold() not in service_names]
+
+
+def reorder_rules(rules: list[dict], visible_order: list[str]) -> list[dict]:
+    """Persist a dragged row order without dropping rules hidden from this UI."""
+    by_id = {rule["id"]: rule for rule in rules}
+    if len(visible_order) != len(set(visible_order)) or any(rule_id not in by_id for rule_id in visible_order):
+        raise ValueError("Некорректный порядок правил")
+    selected = set(visible_order)
+    return [by_id[rule_id] for rule_id in visible_order] + [rule for rule in rules if rule["id"] not in selected]

@@ -16,7 +16,7 @@ from uuid import uuid4
 from PIL import Image, ImageTk
 
 from fork_core import (APP_DIR, Runtime, default_settings, fetch_subscription, load_json, parse_profiles,
-                       probe, save_json, sync_subscription, build_config, executable, profile_from_link,
+                       probe, reorder_rules, save_json, sync_subscription, build_config, executable, profile_from_link,
                        visible_connections, connection_process, xray_sidecar_config)
 
 
@@ -62,6 +62,12 @@ class ForkApp(tk.Tk):
         self.connection_count = tk.StringVar(value="0 соединений")
         self.conn_data = {}
         self.conn_loading = False
+        self.tray = None
+        self._tray_api = None
+        self._rule_drag = None
+        self._rule_dragged = False
+        self._rule_editor = None
+        self._popup = None
         self._theme()
         self._build()
         self._dark_titlebar()
@@ -72,7 +78,9 @@ class ForkApp(tk.Tk):
         self._draw_rules()
         self._refresh_header()
         self.after(1500, self._tick)
-        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(0, self._start_tray)
+        self.bind_all("<Button-1>", self._dismiss_popup_click, add="+")
+        self.protocol("WM_DELETE_WINDOW", self._hide_window)
 
     def _theme(self):
         self.configure(bg=BG)
@@ -100,7 +108,8 @@ class ForkApp(tk.Tk):
                         lightcolor=BORDER, darkcolor=BORDER, focuscolor=BORDER,
                         insertcolor=TEXT, relief="flat", padding=8)
         style.configure("TCombobox", fieldbackground=FIELD, background=FIELD, foreground=TEXT,
-                        arrowcolor=MUTED, bordercolor=BORDER, padding=7)
+                        arrowcolor=MUTED, bordercolor=BORDER, lightcolor=BORDER,
+                        darkcolor=BORDER, focuscolor=BORDER, padding=7)
         style.map("TCombobox", fieldbackground=[("readonly", FIELD)], foreground=[("readonly", TEXT)],
                   selectbackground=[("readonly", FIELD)], selectforeground=[("readonly", TEXT)])
         style.configure("TCheckbutton", background=BG, foreground=TEXT, font=("Segoe UI", 10))
@@ -156,6 +165,7 @@ class ForkApp(tk.Tk):
         ttk.Button(top, text="Журнал", command=self._show_log).pack(side="right", padx=(0, 6))
 
         tabs = ttk.Notebook(self)
+        self.tabs = tabs
         tabs.pack(fill="both", expand=True, padx=18, pady=(0, 18))
         connections = ttk.Frame(tabs, padding=18, style="Card.TFrame")
         servers = ttk.Frame(tabs, padding=18, style="Card.TFrame")
@@ -199,16 +209,20 @@ class ForkApp(tk.Tk):
         ttk.Entry(form, textvariable=self.rule_value).pack(side="left", fill="x", expand=True, padx=5)
         ttk.Combobox(form, textvariable=self.rule_target, values=list(TARGETS.values()), width=13, state="readonly").pack(side="left")
         ttk.Button(form, text="Добавить", style="Accent.TButton", command=self._add_rule).pack(side="left", padx=(8, 0))
-        self.rule_tree = ttk.Treeview(rules, columns=("enabled", "kind", "value", "target"), show="headings", selectmode="browse")
-        for key, title, width in (("enabled", "Вкл.", 50), ("kind", "Вид", 150), ("value", "Значение", 360), ("target", "Выход", 120)):
+        ttk.Label(rules, text="Перетащите строку для приоритета · двойной клик для правки · × для удаления",
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(0, 10))
+        self.rule_tree = ttk.Treeview(rules, columns=("grip", "enabled", "kind", "value", "target", "delete"),
+                                      show="headings", selectmode="browse")
+        for key, title, width in (("grip", "", 34), ("enabled", "Вкл.", 50), ("kind", "Вид", 160),
+                                  ("value", "Значение", 360), ("target", "Выход", 120), ("delete", "", 42)):
             self.rule_tree.heading(key, text=title)
-            self.rule_tree.column(key, width=width)
+            self.rule_tree.column(key, width=width, stretch=key == "value",
+                                  anchor="center" if key in ("grip", "enabled", "delete") else "w")
         self.rule_tree.pack(fill="both", expand=True)
-        rule_buttons = ttk.Frame(rules, style="Card.TFrame")
-        rule_buttons.pack(fill="x", pady=(12, 0))
-        for label, fn in (("Вкл./выкл.", self._flip_rule), ("Выше", lambda: self._move_rule(-1)),
-                          ("Ниже", lambda: self._move_rule(1)), ("Удалить", self._remove_rule)):
-            ttk.Button(rule_buttons, text=label, command=fn).pack(side="left", padx=(0, 5))
+        self.rule_tree.bind("<Button-1>", self._rule_press)
+        self.rule_tree.bind("<B1-Motion>", self._rule_motion)
+        self.rule_tree.bind("<ButtonRelease-1>", self._rule_release)
+        self.rule_tree.bind("<Double-1>", self._rule_edit)
         ttk.Label(connections, text="Активные соединения", style="Title.TLabel").pack(anchor="w")
         ttk.Label(connections, text="Правый клик по строке создаёт правило. Соединения движков скрыты.",
                   style="CardMuted.TLabel").pack(anchor="w", pady=(2, 14))
@@ -236,6 +250,72 @@ class ForkApp(tk.Tk):
     def _refresh_header(self):
         self.connect_button.configure(text="Отключить" if self.enabled.get() else "Подключить")
         self.status_label.configure(fg=GREEN if self.running else ("#ff8d9b" if self.status.get() == "Ошибка" else MUTED))
+        self._sync_tray()
+
+    def _start_tray(self):
+        if os.name != "nt":
+            return
+        try:
+            import pystray
+        except ImportError as error:
+            messagebox.showerror("Fork Lite Win", f"Не удалось запустить значок у часов: {error}")
+            return
+        self._tray_api = pystray
+        logo_path = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "Assets" / "AppIcon.png"
+        image = Image.open(logo_path).convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+        self.tray = pystray.Icon("fork-lite-win", image, "Fork Lite Win", self._tray_menu())
+        icon = self.tray
+        def run_tray():
+            try:
+                icon.run()
+            except Exception as error:
+                self.after(0, lambda e=error: messagebox.showerror("Fork Lite Win", f"Значок у часов: {e}"))
+        threading.Thread(target=run_tray, daemon=True).start()
+
+    def _tray_menu(self):
+        api = self._tray_api
+        item = api.MenuItem
+        def select_action(profile_id):
+            return lambda icon, menu_item: self.after(0, lambda: self._set_profile(profile_id))
+        profiles = [item(p["name"],
+                         select_action(p["id"]),
+                         checked=lambda menu_item, pid=p["id"]: self.profiles.get("selected") == pid)
+                    for p in self.profiles["items"]]
+        profile_menu = item("Сервер", api.Menu(*profiles)) if profiles else item("Серверов пока нет", None, enabled=False)
+        return api.Menu(
+            item(f"Статус: {self.status.get()}", None, enabled=False),
+            item("Отключить" if self.enabled.get() else "Подключить",
+                 lambda icon, menu_item: self.after(0, self._toggle_click), enabled=not self.busy),
+            profile_menu,
+            api.Menu.SEPARATOR,
+            item("Открыть окно", lambda icon, menu_item: self.after(0, self._show_window), default=True),
+            item("Журнал", lambda icon, menu_item: self.after(0, self._show_log)),
+            item("Выход", lambda icon, menu_item: self.after(0, self._exit)),
+        )
+
+    def _sync_tray(self):
+        if self.tray:
+            self.tray.title = f"Fork Lite Win — {self.status.get()}"
+            self.tray.menu = self._tray_menu()
+            self.tray.update_menu()
+
+    def _show_window(self):
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _hide_window(self):
+        if self.tray:
+            self.withdraw()
+        else:
+            self._exit()
+
+    def _exit(self):
+        self.runtime.stop()
+        if self.tray:
+            self.tray.stop()
+            self.tray = None
+        self.destroy()
 
     def _background(self, job, done):
         def run():
@@ -311,12 +391,17 @@ class ForkApp(tk.Tk):
             self.server_tree.insert("", "end", iid=p["id"], values=(marker + p["name"],
                                     f"{p['server']}:{p['port']}", f"{p.get('network', 'tcp')} · {p.get('security', 'reality')}",
                                     self.pings.get(p["id"], "")))
+        self._sync_tray()
 
     def _select_profile(self, _event=None):
         selection = self.server_tree.selection()
-        if not selection or self.profiles.get("selected") == selection[0]:
+        if selection:
+            self._set_profile(selection[0])
+
+    def _set_profile(self, profile_id):
+        if self.profiles.get("selected") == profile_id or not any(p["id"] == profile_id for p in self.profiles["items"]):
             return
-        self.profiles["selected"] = selection[0]
+        self.profiles["selected"] = profile_id
         self.auto_best.set(False)
         self._save_auto_best()
         save_json("profiles.json", self.profiles)
@@ -422,16 +507,19 @@ class ForkApp(tk.Tk):
         for rule in self.settings["rules"]:
             if rule.get("corpBlock") or rule.get("target") == "corp":
                 continue
-            self.rule_tree.insert("", "end", iid=rule["id"], values=("✓" if rule.get("enabled", True) else "",
-                                  KINDS.get(rule["kind"], rule["kind"]), rule["value"], TARGETS.get(rule["target"], rule["target"])))
+            self.rule_tree.insert("", "end", iid=rule["id"], values=("⋮⋮", "✓" if rule.get("enabled", True) else "",
+                                  KINDS.get(rule["kind"], rule["kind"]), rule["value"],
+                                  TARGETS.get(rule["target"], rule["target"]), "×"))
 
     def _selected_rule(self):
         selected = self.rule_tree.selection()
         return next((r for r in self.settings["rules"] if selected and r["id"] == selected[0]), None)
 
-    def _save_rules(self):
+    def _save_rules(self, selected_id=None):
         save_json("settings.json", self.settings)
         self._draw_rules()
+        if selected_id and self.rule_tree.exists(selected_id):
+            self.rule_tree.selection_set(selected_id)
         self._restart()
 
     def _add_rule(self):
@@ -442,42 +530,126 @@ class ForkApp(tk.Tk):
             return
         if not value:
             return
-        if kind == "ipCidr":
-            try:
-                ipaddress.ip_network(value, strict=False)
-            except ValueError:
-                messagebox.showerror("Правило", "Укажите IP или CIDR")
-                return
-        if kind == "port" and (not value.isdigit() or not 1 <= int(value) <= 65535):
-            messagebox.showerror("Правило", "Порт должен быть от 1 до 65535")
+        if not self._valid_rule(kind, value):
             return
         self.settings["rules"].insert(0, {"id": str(uuid4()), "kind": kind, "value": value,
                                              "target": target, "enabled": True})
         self.rule_value.set("")
         self._save_rules()
 
-    def _flip_rule(self):
-        rule = self._selected_rule()
-        if rule:
+    def _valid_rule(self, kind, value):
+        if not value:
+            return False
+        if kind == "ipCidr":
+            try:
+                ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                messagebox.showerror("Правило", "Укажите IP или CIDR")
+                return False
+        if kind == "port" and (not value.isdigit() or not 1 <= int(value) <= 65535):
+            messagebox.showerror("Правило", "Порт должен быть от 1 до 65535")
+            return False
+        return True
+
+    def _rule_press(self, event):
+        item = self.rule_tree.identify_row(event.y)
+        column = self.rule_tree.identify_column(event.x)
+        self._rule_drag = None
+        self._rule_dragged = False
+        if not item:
+            return
+        rule = next((r for r in self.settings["rules"] if r["id"] == item), None)
+        if not rule:
+            return
+        if column == "#2":
             rule["enabled"] = not rule.get("enabled", True)
-            self._save_rules()
-
-    def _move_rule(self, offset):
-        rule = self._selected_rule()
-        if rule:
-            rules = self.settings["rules"]
-            i = rules.index(rule)
-            j = i + offset
-            if 0 <= j < len(rules):
-                rules[i], rules[j] = rules[j], rules[i]
-                self._save_rules()
-                self.rule_tree.selection_set(rule["id"])
-
-    def _remove_rule(self):
-        rule = self._selected_rule()
-        if rule:
+            self._save_rules(item)
+            return "break"
+        if column == "#6":
             self.settings["rules"].remove(rule)
             self._save_rules()
+            return "break"
+        self._rule_drag = item
+        self._rule_drag_y = event.y
+
+    def _rule_motion(self, event):
+        item = self._rule_drag
+        if not item or not self.rule_tree.exists(item):
+            return
+        if not self._rule_dragged and abs(event.y - self._rule_drag_y) < 7:
+            return
+        self._rule_dragged = True
+        target = self.rule_tree.identify_row(event.y)
+        if target and target != item:
+            self.rule_tree.move(item, "", self.rule_tree.index(target))
+            self.rule_tree.selection_set(item)
+        return "break"
+
+    def _rule_release(self, _event):
+        item = self._rule_drag
+        self._rule_drag = None
+        if item and self._rule_dragged:
+            self.settings["rules"] = reorder_rules(self.settings["rules"], list(self.rule_tree.get_children()))
+            self._save_rules(item)
+        self._rule_dragged = False
+
+    def _rule_edit(self, event):
+        item = self.rule_tree.identify_row(event.y)
+        column = self.rule_tree.identify_column(event.x)
+        if not item or column not in ("#3", "#4", "#5"):
+            return
+        self._rule_drag = None
+        rule = next((r for r in self.settings["rules"] if r["id"] == item), None)
+        box = self.rule_tree.bbox(item, column)
+        if not rule or not box:
+            return
+        if self._rule_editor and self._rule_editor.winfo_exists():
+            self._rule_editor.destroy()
+        x, y, width, height = box
+        if column == "#4":
+            editor = ttk.Entry(self.rule_tree)
+            editor.insert(0, rule["value"])
+            editor.selection_range(0, "end")
+        else:
+            labels = KINDS if column == "#3" else TARGETS
+            key = rule["kind"] if column == "#3" else rule["target"]
+            editor = ttk.Combobox(self.rule_tree, values=list(labels.values()), state="readonly")
+            editor.set(labels[key])
+        self._rule_editor = editor
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.focus_set()
+        committed = False
+
+        def finish(save=True):
+            nonlocal committed
+            if committed:
+                return
+            committed = True
+            value = editor.get().strip()
+            editor.destroy()
+            self._rule_editor = None
+            if not save:
+                return
+            key = {"#3": "kind", "#4": "value", "#5": "target"}[column]
+            if column == "#3":
+                value = next((k for k, title in KINDS.items() if title == value), rule[key])
+            elif column == "#5":
+                value = next((k for k, title in TARGETS.items() if title == value), rule[key])
+            if value == rule[key]:
+                return
+            kind = value if key == "kind" else rule["kind"]
+            rule_value = value if key == "value" else rule["value"]
+            if not self._valid_rule(kind, rule_value):
+                return
+            rule[key] = value
+            self._save_rules(item)
+
+        editor.bind("<Return>", lambda event: finish())
+        editor.bind("<Escape>", lambda event: finish(False))
+        editor.bind("<FocusOut>", lambda event: finish())
+        if column != "#4":
+            editor.bind("<<ComboboxSelected>>", lambda event: finish())
+        return "break"
 
     def _draw_connections(self):
         if self.conn_loading:
@@ -537,14 +709,58 @@ class ForkApp(tk.Tk):
             pass
         if process:
             choices.append(("processName", process))
-        menu = tk.Menu(self, tearoff=False, bg=PANEL, fg=TEXT, activebackground=BORDER, activeforeground=TEXT)
-        for kind, value in choices:
-            sub = tk.Menu(menu, tearoff=False, bg=PANEL, fg=TEXT, activebackground=BORDER, activeforeground=TEXT)
-            for target, title in TARGETS.items():
-                sub.add_command(label=title, command=lambda k=kind, v=value, t=target: self._quick_rule(k, v, t))
-            menu.add_cascade(label=f"{KINDS[kind]}: {value}", menu=sub)
         if choices:
-            menu.tk_popup(event.x_root, event.y_root)
+            self._quick_rule_popup(choices, event.x_root, event.y_root)
+
+    def _quick_rule_popup(self, choices, x, y):
+        if self._popup and self._popup.winfo_exists():
+            self._popup.destroy()
+        popup = tk.Toplevel(self)
+        self._popup = popup
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(bg=PANEL, highlightthickness=0, bd=0)
+        tk.Label(popup, text="СОЗДАТЬ ПРАВИЛО", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI Semibold", 9), anchor="w", padx=14, pady=10).pack(fill="x")
+        for kind, value in choices:
+            row = tk.Frame(popup, bg=PANEL, padx=12, pady=5)
+            row.pack(fill="x")
+            title = value if len(value) <= 28 else value[:25] + "…"
+            tk.Label(row, text=f"{KINDS[kind]}: {title}", bg=PANEL, fg=TEXT,
+                     font=("Segoe UI", 9), width=34, anchor="w").pack(side="left")
+            for target, label in TARGETS.items():
+                def choose(k=kind, v=value, t=target):
+                    popup.destroy()
+                    self._popup = None
+                    self._quick_rule(k, v, t)
+                tk.Button(row, text=label, command=choose, bg=FIELD, fg=TEXT,
+                          activebackground=BORDER, activeforeground=TEXT, relief="flat",
+                          bd=0, highlightthickness=0, padx=8, pady=5,
+                          font=("Segoe UI", 9), cursor="hand2").pack(side="left", padx=(4, 0))
+        popup.update_idletasks()
+        x = min(x, popup.winfo_screenwidth() - popup.winfo_reqwidth() - 8)
+        y = min(y, popup.winfo_screenheight() - popup.winfo_reqheight() - 8)
+        popup.geometry(f"+{max(0, x)}+{max(0, y)}")
+        popup.bind("<Escape>", lambda event: popup.destroy())
+        popup.bind("<FocusOut>", lambda event: self.after(100, lambda: self._close_popup_if_unfocused(popup)))
+        popup.focus_force()
+
+    def _close_popup_if_unfocused(self, popup):
+        if not popup.winfo_exists():
+            return
+        focused = self.focus_get()
+        if focused is None or focused.winfo_toplevel() != popup:
+            popup.destroy()
+            self._popup = None
+
+    def _dismiss_popup_click(self, event):
+        popup = self._popup
+        if not popup or not popup.winfo_exists():
+            return
+        widget = popup.winfo_containing(event.x_root, event.y_root)
+        if widget is None or widget.winfo_toplevel() != popup:
+            popup.destroy()
+            self._popup = None
 
     def _quick_rule(self, kind, value, target):
         self.rule_kind.set(KINDS[kind])
@@ -577,14 +793,17 @@ class ForkApp(tk.Tk):
         self.after(1500, self._tick)
 
     def _close(self):
-        self.runtime.stop()
-        self.destroy()
+        self._exit()
 
 
 def self_test():
     """Check bundled engines without creating a TUN or opening a window."""
     import json
     import tempfile
+    if os.name == "nt":
+        import pystray
+        if not pystray.Icon.HAS_MENU:
+            raise RuntimeError("Windows tray menu недоступно")
 
     base = ("vless://123e4567-e89b-12d3-a456-426614174000@example.com:443"
             "?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=")

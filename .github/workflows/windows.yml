@@ -32,12 +32,17 @@ jobs:
           Copy-Item vendor/sing/sing-box-1.14.4-windows-amd64/libcronet.dll bin/
           Copy-Item vendor/xray/xray.exe bin/
           Copy-Item vendor/xray/wintun.dll bin/
+      - name: Check engine configs
+        shell: pwsh
+        run: python app.py --self-test
       - name: Build executable
         shell: pwsh
         run: .\build.ps1
-      - name: Check packaged engines and configuration
+      - name: Check UAC manifest and bundled engines
         shell: pwsh
-        run: .\dist\ForkLiteWin.exe --self-test
+        run: |
+          python -m pip install pefile
+          python scripts/check_package.py dist/ForkLiteWin.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ForkLiteWin-windows-x64

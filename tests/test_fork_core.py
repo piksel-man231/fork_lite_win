@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from fork_core import (build_config, engine_error, parse_profiles, profile_from_link, sync_subscription,
+from fork_core import (build_config, engine_error, parse_profiles, profile_from_link, reorder_rules, sync_subscription,
                        visible_connections, xray_sidecar_config)
 
 
@@ -93,6 +93,10 @@ class ForkCoreTests(unittest.TestCase):
 
     def test_engine_error_removes_terminal_colors(self):
         self.assertEqual(engine_error("\x1b[31mFATAL\x1b[0m unsupported flow"), "FATAL unsupported flow")
+
+    def test_reorder_rules_keeps_hidden_rules(self):
+        rules = [{"id": "a"}, {"id": "b"}, {"id": "hidden"}]
+        self.assertEqual([r["id"] for r in reorder_rules(rules, ["b", "a"])], ["b", "a", "hidden"])
 
 
 if __name__ == "__main__":
