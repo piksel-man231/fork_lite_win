@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from fork_core import build_config, parse_profiles, profile_from_link, sync_subscription, xray_sidecar_config
+from fork_core import (build_config, engine_error, parse_profiles, profile_from_link, sync_subscription,
+                       visible_connections, xray_sidecar_config)
 
 
 LINK = "vless://123e4567-e89b-12d3-a456-426614174000@example.com:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=tcp#Main"
@@ -72,6 +73,26 @@ class ForkCoreTests(unittest.TestCase):
         self.assertEqual(config["outbounds"][1]["type"], "socks")
         sidecar = xray_sidecar_config(p)
         self.assertEqual(sidecar["outbounds"][0]["streamSettings"]["network"], "xhttp")
+
+    def test_vision_udp443_keeps_flow_in_xray(self):
+        profile = profile_from_link(LINK.replace("type=tcp", "type=tcp&flow=xtls-rprx-vision-udp443"))
+        config = build_config(profile, [], "secret")
+        self.assertEqual(config["outbounds"][1]["type"], "socks")
+        sidecar = xray_sidecar_config(profile)
+        outbound = sidecar["outbounds"][0]
+        self.assertEqual(outbound["streamSettings"]["network"], "tcp")
+        self.assertEqual(outbound["settings"]["vnext"][0]["users"][0]["flow"], "xtls-rprx-vision-udp443")
+
+    def test_filter_engine_connections(self):
+        connections = [
+            {"id": "1", "metadata": {"processPath": r"C:\Fork\xray.exe"}},
+            {"id": "2", "metadata": {"processPath": r"C:\Fork\SING-BOX.EXE (user)"}},
+            {"id": "3", "metadata": {"processPath": r"C:\Apps\browser.exe"}},
+        ]
+        self.assertEqual([c["id"] for c in visible_connections(connections)], ["3"])
+
+    def test_engine_error_removes_terminal_colors(self):
+        self.assertEqual(engine_error("\x1b[31mFATAL\x1b[0m unsupported flow"), "FATAL unsupported flow")
 
 
 if __name__ == "__main__":

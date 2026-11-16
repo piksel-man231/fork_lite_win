@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import socket
@@ -164,7 +165,7 @@ def sync_subscription(store: dict, url: str, incoming: list[dict]):
 
 
 def profile_outbound(profile: dict):
-    if profile.get("network") == "xhttp":
+    if needs_sidecar(profile):
         return {"type": "socks", "tag": "xray", "server": "127.0.0.1", "server_port": 19080, "version": "5"}
     outbound = {"type": "vless", "tag": "xray", "server": profile["server"], "server_port": profile["port"],
                 "uuid": profile["uuid"], "domain_resolver": "dns-local"}
@@ -187,20 +188,29 @@ def profile_outbound(profile: dict):
     return outbound
 
 
+def needs_sidecar(profile: dict) -> bool:
+    """Keep Xray-only transports and flows out of sing-box's VLESS outbound."""
+    return profile.get("network") == "xhttp" or profile.get("flow") == "xtls-rprx-vision-udp443"
+
+
 def xray_sidecar_config(profile: dict):
-    stream = {"network": "xhttp", "security": profile.get("security", "none")}
+    network = profile.get("network", "tcp")
+    stream = {"network": network, "security": profile.get("security", "none")}
     if stream["security"] == "reality":
         stream["realitySettings"] = {"serverName": profile["serverName"], "fingerprint": profile.get("fingerprint", "chrome"),
                                      "publicKey": profile["publicKey"], "shortId": profile.get("shortId", ""), "spiderX": ""}
     elif stream["security"] == "tls":
         stream["tlsSettings"] = {"serverName": profile["serverName"], "fingerprint": profile.get("fingerprint", "chrome")}
-    opts = {"path": profile.get("path") or "/", "mode": profile.get("mode") or "auto"}
-    if profile.get("host"):
-        opts["host"] = profile["host"]
-    if profile.get("xhttpExtra"):
-        opts["extra"] = json.loads(profile["xhttpExtra"])
-    stream["xhttpSettings"] = opts
+    if network == "xhttp":
+        opts = {"path": profile.get("path") or "/", "mode": profile.get("mode") or "auto"}
+        if profile.get("host"):
+            opts["host"] = profile["host"]
+        if profile.get("xhttpExtra"):
+            opts["extra"] = json.loads(profile["xhttpExtra"])
+        stream["xhttpSettings"] = opts
     user = {"id": profile["uuid"], "encryption": "none"}
+    if network == "tcp" and profile.get("flow"):
+        user["flow"] = profile["flow"]
     return {"log": {"loglevel": "warning"},
             "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1", "port": 19080, "protocol": "socks", "settings": {"auth": "noauth", "udp": True}}],
             "outbounds": [{"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": profile["server"], "port": profile["port"], "users": [user]}]}, "streamSettings": stream}]}
@@ -274,6 +284,10 @@ def probe(profile: dict, timeout=1.5):
         return None
 
 
+def engine_error(output: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", output).strip()[-800:]
+
+
 class Runtime:
     def __init__(self):
         self.secret = secrets.token_urlsafe(24)
@@ -303,7 +317,7 @@ class Runtime:
         if not sing:
             raise RuntimeError("Не найден sing-box.exe: положите его в windows/bin или добавьте в PATH")
         APP_DIR.mkdir(parents=True, exist_ok=True)
-        if profile.get("network") == "xhttp":
+        if needs_sidecar(profile):
             xray = executable("xray.exe")
             if not xray:
                 raise RuntimeError("Для xhttp нужен xray.exe в windows/bin или PATH")
@@ -330,7 +344,7 @@ class Runtime:
                                timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if check.returncode:
             self.stop()
-            raise RuntimeError((check.stderr or check.stdout).strip()[-800:])
+            raise RuntimeError(engine_error(check.stderr or check.stdout))
         self.log = open(APP_DIR / "core.log", "w", encoding="utf-8")
         self.core = subprocess.Popen([sing, "run", "-c", str(config)], cwd=APP_DIR,
                                      stdout=self.log, stderr=subprocess.STDOUT,
@@ -347,3 +361,14 @@ class Runtime:
         request = Request("http://127.0.0.1:19090/connections", headers={"Authorization": "Bearer " + self.secret})
         with urlopen(request, timeout=2) as response:
             return json.load(response).get("connections", [])
+
+
+def connection_process(connection: dict) -> str:
+    path = str((connection.get("metadata") or {}).get("processPath") or "")
+    return path.split(" (")[0].replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def visible_connections(connections: list[dict]) -> list[dict]:
+    service_names = {"xray.exe", "xray", "sing-box.exe", "sing-box"}
+    return [connection for connection in connections
+            if connection_process(connection).casefold() not in service_names]

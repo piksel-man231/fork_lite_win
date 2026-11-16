@@ -15,5 +15,5 @@ $binaryArgs = @(
     '--add-binary', 'bin\xray.exe;bin',
     '--add-binary', 'bin\wintun.dll;bin'
 )
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForkLiteWin --icon Assets\AppIcon.ico --add-data 'Assets\AppIcon.ico;Assets' @binaryArgs app.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name ForkLiteWin --icon Assets\AppIcon.ico --add-data 'Assets\AppIcon.ico;Assets' --add-data 'Assets\AppIcon.png;Assets' @binaryArgs app.py
 Write-Host 'Готово: dist\ForkLiteWin.exe'
