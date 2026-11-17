@@ -3,12 +3,13 @@ use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
-const BG: Color32 = Color32::from_rgb(15, 18, 27);
-const CARD: Color32 = Color32::from_rgb(25, 30, 42);
-const SURFACE: Color32 = Color32::from_rgb(33, 39, 53);
-const MUTED: Color32 = Color32::from_rgb(147, 159, 182);
-const ACCENT: Color32 = Color32::from_rgb(113, 167, 255);
-const GREEN: Color32 = Color32::from_rgb(90, 212, 165);
+const BG: Color32 = Color32::from_rgb(17, 18, 21);
+const CARD: Color32 = Color32::from_rgb(27, 29, 34);
+const SURFACE: Color32 = Color32::from_rgb(38, 41, 48);
+const BORDER: Color32 = Color32::from_rgb(53, 56, 65);
+const MUTED: Color32 = Color32::from_rgb(151, 156, 167);
+const ACCENT: Color32 = Color32::from_rgb(112, 170, 255);
+const GREEN: Color32 = Color32::from_rgb(108, 211, 159);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 enum Tab {
@@ -92,16 +93,51 @@ fn create_tray() -> Option<Tray> {
 impl ForkApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_theme(egui::Theme::Dark);
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "inter".into(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../Assets/InterVariable.ttf"
+            ))),
+        );
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .insert(0, "inter".into());
+        cc.egui_ctx.set_fonts(fonts);
         let mut style = (*cc.egui_ctx.style_of(egui::Theme::Dark)).clone();
         style.visuals = egui::Visuals::dark();
         style.visuals.panel_fill = BG;
         style.visuals.window_fill = CARD;
+        style.visuals.extreme_bg_color = Color32::from_rgb(22, 24, 28);
+        style.visuals.faint_bg_color = Color32::from_rgb(32, 35, 41);
+        style.visuals.selection.bg_fill = Color32::from_rgb(47, 91, 151);
         style.visuals.widgets.inactive.bg_fill = SURFACE;
-        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 56, 78);
+        style.visuals.widgets.noninteractive.fg_stroke =
+            Stroke::new(1.0, Color32::from_rgb(226, 229, 235));
+        style.visuals.widgets.inactive.weak_bg_fill = SURFACE;
+        style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
+        style.visuals.widgets.inactive.corner_radius = 8.into();
+        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(49, 55, 65);
+        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(49, 55, 65);
+        style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(77, 86, 102));
+        style.visuals.widgets.hovered.corner_radius = 8.into();
         style.visuals.widgets.active.bg_fill = ACCENT;
-        style.visuals.selection.bg_fill = Color32::from_rgb(55, 91, 145);
-        style.spacing.item_spacing = Vec2::new(10.0, 10.0);
-        style.spacing.button_padding = Vec2::new(14.0, 9.0);
+        style.visuals.widgets.active.corner_radius = 8.into();
+        style.visuals.window_corner_radius = 12.into();
+        style.visuals.menu_corner_radius = 10.into();
+        style.spacing.item_spacing = Vec2::new(10.0, 8.0);
+        style.spacing.button_padding = Vec2::new(12.0, 7.0);
+        style.spacing.interact_size.y = 32.0;
+        style.text_styles = [
+            (egui::TextStyle::Heading, egui::FontId::proportional(22.0)),
+            (egui::TextStyle::Body, egui::FontId::proportional(14.0)),
+            (egui::TextStyle::Button, egui::FontId::proportional(14.0)),
+            (egui::TextStyle::Monospace, egui::FontId::monospace(13.0)),
+            (egui::TextStyle::Small, egui::FontId::proportional(12.0)),
+        ]
+        .into();
         cc.egui_ctx.set_style_of(egui::Theme::Dark, style);
         let logo_png = image::load_from_memory(include_bytes!("../Assets/AppIcon.png"))
             .expect("logo")
@@ -278,24 +314,42 @@ impl ForkApp {
     }
     fn header(&mut self, ui: &mut egui::Ui) {
         let active = self.runtime.running();
+        let can_toggle = active || self.selected_profile().is_some();
         ui.horizontal(|ui| {
-            ui.image((self.logo.id(), Vec2::splat(50.0)));
+            ui.image((self.logo.id(), Vec2::splat(36.0)));
             ui.vertical(|ui| {
-                ui.label(RichText::new("Fork Lite").size(25.0).strong());
-                ui.label(RichText::new("WINDOWS · VLESS").size(10.0).color(MUTED));
+                ui.label(RichText::new("Fork Lite").size(17.0).strong());
+                ui.label(RichText::new("Сеть под контролем").size(11.0).color(MUTED));
             });
-            ui.add_space((ui.available_width() - 130.0).max(0.0));
-            ui.label(
-                RichText::new(if active {
-                    "Подключено"
-                } else {
-                    "Отключено"
-                })
-                .color(if active { GREEN } else { MUTED }),
-            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let button = egui::Button::new(
+                    RichText::new(if active {
+                        "Отключить VPN"
+                    } else {
+                        "Подключить VPN"
+                    })
+                    .color(if active {
+                        GREEN
+                    } else if can_toggle {
+                        ACCENT
+                    } else {
+                        MUTED
+                    }),
+                )
+                .fill(CARD)
+                .stroke(Stroke::new(1.0, BORDER))
+                .corner_radius(20);
+                if ui
+                    .add_enabled(can_toggle, button)
+                    .on_disabled_hover_text("Сначала выберите сервер")
+                    .clicked()
+                {
+                    self.toggle();
+                }
+            });
         });
-        ui.add_space(16.0);
-        ui.horizontal(|ui| {
+        ui.add_space(20.0);
+        ui.horizontal_wrapped(|ui| {
             for (tab, title) in [
                 (Tab::Servers, "Серверы"),
                 (Tab::Rules, "Правила"),
@@ -303,108 +357,270 @@ impl ForkApp {
                 (Tab::Settings, "Настройки"),
             ] {
                 let selected = self.tab == tab;
-                if ui
-                    .selectable_label(
-                        selected,
-                        RichText::new(title).size(15.0).color(if selected {
-                            ACCENT
-                        } else {
-                            MUTED
-                        }),
-                    )
-                    .clicked()
-                {
+                let button = egui::Button::new(RichText::new(title).color(if selected {
+                    Color32::WHITE
+                } else {
+                    MUTED
+                }))
+                .fill(if selected {
+                    SURFACE
+                } else {
+                    Color32::TRANSPARENT
+                })
+                .stroke(if selected {
+                    Stroke::new(1.0, BORDER)
+                } else {
+                    Stroke::NONE
+                });
+                if ui.add(button).clicked() {
                     self.tab = tab;
                 }
             }
         });
+        ui.add_space(12.0);
         ui.separator();
+    }
+    fn sidebar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.image((self.logo.id(), Vec2::splat(34.0)));
+            ui.label(RichText::new("Fork Lite").size(17.0).strong());
+        });
+        ui.add_space(30.0);
+        ui.label(RichText::new("Навигация").size(11.0).color(MUTED));
+        ui.add_space(8.0);
+        for (tab, title) in [
+            (Tab::Servers, "Серверы"),
+            (Tab::Rules, "Правила"),
+            (Tab::Connections, "Соединения"),
+            (Tab::Settings, "Настройки"),
+        ] {
+            let selected = self.tab == tab;
+            let button = egui::Button::new(RichText::new(title).color(if selected {
+                Color32::WHITE
+            } else {
+                MUTED
+            }))
+            .fill(if selected {
+                SURFACE
+            } else {
+                Color32::TRANSPARENT
+            })
+            .stroke(Stroke::NONE);
+            if ui.add_sized([ui.available_width(), 38.0], button).clicked() {
+                self.tab = tab;
+            }
+            ui.add_space(4.0);
+        }
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            let active = self.runtime.running();
+            ui.label(
+                RichText::new(if active {
+                    "●  Подключено"
+                } else {
+                    "●  Отключено"
+                })
+                .color(if active { GREEN } else { MUTED })
+                .size(12.0),
+            );
+            ui.add_space(14.0);
+            let can_toggle = active || self.selected_profile().is_some();
+            let button = egui::Button::new(
+                RichText::new(if active {
+                    "Отключить VPN"
+                } else {
+                    "Подключить VPN"
+                })
+                .strong()
+                .color(if active {
+                    Color32::WHITE
+                } else if can_toggle {
+                    BG
+                } else {
+                    MUTED
+                }),
+            )
+            .fill(if active || !can_toggle {
+                SURFACE
+            } else {
+                ACCENT
+            });
+            let width = ui.available_width();
+            if ui
+                .add_enabled_ui(can_toggle, |ui| ui.add_sized([width, 38.0], button))
+                .inner
+                .on_disabled_hover_text("Сначала выберите сервер")
+                .clicked()
+            {
+                self.toggle();
+            }
+            ui.add_space(14.0);
+            ui.separator();
+        });
+    }
+    fn body(&mut self, ui: &mut egui::Ui) {
+        if self.tab == Tab::Connections {
+            ui.add_space(12.0);
+            self.connections(ui);
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt(self.tab)
+                .show(ui, |ui| {
+                    ui.add_space(12.0);
+                    let content_width = ui.available_width().min(860.0);
+                    let side_space = ((ui.available_width() - content_width) / 2.0).max(0.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(side_space);
+                        ui.vertical(|ui| {
+                            ui.set_width(content_width);
+                            match self.tab {
+                                Tab::Servers => self.servers(ui),
+                                Tab::Rules => self.rules(ui),
+                                Tab::Settings => self.settings(ui),
+                                Tab::Connections => unreachable!(),
+                            }
+                            if !self.message.is_empty() {
+                                ui.add_space(12.0);
+                                egui::Frame::new()
+                                    .fill(SURFACE)
+                                    .corner_radius(7)
+                                    .inner_margin(10)
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(&self.message).color(ACCENT));
+                                    });
+                            }
+                        });
+                    });
+                });
+        }
     }
     fn servers(&mut self, ui: &mut egui::Ui) {
         let running = self.runtime.running();
         egui::Frame::new()
             .fill(CARD)
+            .stroke(Stroke::new(1.0, BORDER))
             .corner_radius(14)
-            .inner_margin(22)
+            .inner_margin(20)
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
-                ui.label(RichText::new("Подключение").size(21.0).strong());
-                ui.add_space(4.0);
                 let selected = self.selected_profile();
-                ui.label(
-                    RichText::new(
-                        selected
-                            .as_ref()
-                            .and_then(|p| p["name"].as_str())
-                            .unwrap_or("Сервер не выбран"),
-                    )
-                    .size(17.0)
-                    .color(ACCENT),
-                );
-                if let Some(p) = selected {
-                    ui.label(
-                        RichText::new(format!(
-                            "{}:{} · {} · {}",
-                            p["server"].as_str().unwrap_or(""),
-                            p["port"],
-                            p["network"].as_str().unwrap_or(""),
-                            p["security"].as_str().unwrap_or("")
-                        ))
-                        .color(MUTED),
-                    );
-                }
-                ui.add_space(13.0);
-                let text = if running {
-                    "Отключить"
-                } else {
-                    "Подключить"
-                };
-                if ui
-                    .add_sized(
-                        [180.0, 39.0],
-                        egui::Button::new(RichText::new(text).size(15.0).strong())
-                            .fill(if running { SURFACE } else { ACCENT }),
-                    )
-                    .clicked()
-                {
-                    self.toggle();
-                }
+                ui.horizontal_wrapped(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Подключение").size(11.0).color(MUTED));
+                        ui.add_space(3.0);
+                        ui.label(
+                            RichText::new(
+                                selected
+                                    .as_ref()
+                                    .and_then(|p| p["name"].as_str())
+                                    .unwrap_or("Сервер не выбран"),
+                            )
+                            .size(20.0)
+                            .strong(),
+                        );
+                        ui.add_space(2.0);
+                        if let Some(p) = &selected {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{}:{}  ·  {}",
+                                    p["server"].as_str().unwrap_or(""),
+                                    p["port"],
+                                    p["network"].as_str().unwrap_or("")
+                                ))
+                                .color(MUTED)
+                                .size(12.0),
+                            );
+                        } else {
+                            ui.label(
+                                RichText::new("Выберите сервер из списка ниже")
+                                    .color(MUTED)
+                                    .size(12.0),
+                            );
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let text = if running {
+                            "Отключить"
+                        } else {
+                            "Подключить"
+                        };
+                        let can_connect = selected.is_some();
+                        let button = egui::Button::new(
+                            RichText::new(text)
+                                .strong()
+                                .color(if running || !can_connect { MUTED } else { BG }),
+                        )
+                        .fill(if running || !can_connect {
+                            SURFACE
+                        } else {
+                            ACCENT
+                        });
+                        if ui
+                            .add_enabled_ui(selected.is_some() || running, |ui| {
+                                ui.add_sized([142.0, 38.0], button)
+                            })
+                            .inner
+                            .on_disabled_hover_text("Сначала выберите сервер")
+                            .clicked()
+                        {
+                            self.toggle();
+                        }
+                    });
+                });
             });
-        ui.add_space(15.0);
+        ui.add_space(25.0);
         ui.horizontal(|ui| {
-            ui.heading("Мои серверы");
-            ui.add_space(12.0);
+            ui.heading("Серверы");
+            ui.add_space(16.0);
             let mut auto = self.settings["autoBest"].as_bool().unwrap_or(true);
-            if ui.checkbox(&mut auto, "Выбирать быстрый").changed() {
+            if ui
+                .checkbox(&mut auto, "Автовыбор")
+                .on_hover_text("При подключении выбрать сервер с наименьшей задержкой")
+                .changed()
+            {
                 self.settings["autoBest"] = json!(auto);
                 self.save_settings();
             }
         });
+        if self.items().is_empty() {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Пока нет серверов. Добавьте VLESS-ссылку или подписку ниже.")
+                    .color(MUTED),
+            );
+        }
         egui::ScrollArea::vertical()
-            .max_height(250.0)
+            .max_height(330.0)
             .show(ui, |ui| {
                 for profile in self.items() {
                     let id = profile["id"].as_str().unwrap_or("").to_owned();
                     let selected = self.store["selected"] == profile["id"];
                     egui::Frame::new()
                         .fill(if selected {
-                            Color32::from_rgb(30, 45, 67)
+                            Color32::from_rgb(34, 43, 57)
                         } else {
                             CARD
                         })
+                        .stroke(Stroke::new(
+                            1.0,
+                            if selected {
+                                Color32::from_rgb(67, 105, 156)
+                            } else {
+                                BORDER
+                            },
+                        ))
                         .corner_radius(10)
-                        .inner_margin(12)
+                        .inner_margin(10)
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                let name_width = (ui.available_width() - 190.0).max(100.0);
+                            ui.horizontal_wrapped(|ui| {
+                                let name_width = (ui.available_width() - 230.0).max(100.0);
                                 if ui
                                     .add_sized(
-                                        [name_width, 29.0],
+                                        [name_width, 31.0],
                                         egui::Button::new(
                                             RichText::new(
                                                 profile["name"].as_str().unwrap_or("Сервер"),
                                             )
-                                            .size(15.0)
+                                            .size(14.0)
                                             .strong(),
                                         )
                                         .selected(selected)
@@ -427,14 +643,14 @@ impl ForkApp {
                                     .unwrap_or("—".into());
                                 ui.label(RichText::new(ping).color(MUTED));
                                 if ui
-                                    .small_button("Тест")
+                                    .small_button("Пинг")
                                     .on_hover_text("Проверить задержку")
                                     .clicked()
                                 {
                                     self.ping.insert(id.clone(), core::probe(&profile));
                                 }
                                 if ui
-                                    .small_button("X")
+                                    .small_button("Удалить")
                                     .on_hover_text("Удалить сервер")
                                     .clicked()
                                 {
@@ -456,41 +672,59 @@ impl ForkApp {
                     ui.add_space(5.0);
                 }
             });
-        ui.add_space(9.0);
-        ui.label(
-            RichText::new("Добавить VLESS-ссылку, список, Clash YAML или HTTPS-подписку")
-                .color(MUTED),
-        );
-        ui.add(
-            egui::TextEdit::multiline(&mut self.input)
-                .desired_rows(3)
-                .hint_text("vless://… или https://…")
-                .desired_width(f32::INFINITY),
-        );
-        ui.horizontal(|ui| {
-            if ui.button("Добавить").clicked() {
-                self.import();
-            }
-            if ui.button("Вставить").clicked() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if let Ok(text) = clipboard.get_text() {
-                        self.input = text;
+        ui.add_space(16.0);
+        egui::CollapsingHeader::new("Добавить сервер или подписку")
+            .default_open(self.items().is_empty())
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("VLESS-ссылка, список, Clash YAML или HTTPS-подписка")
+                        .color(MUTED),
+                );
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.input)
+                        .desired_rows(2)
+                        .hint_text("vless://… или https://…")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !self.input.trim().is_empty(),
+                            egui::Button::new("Добавить").fill(if self.input.trim().is_empty() {
+                                SURFACE
+                            } else {
+                                ACCENT
+                            }),
+                        )
+                        .on_disabled_hover_text("Вставьте ссылку или конфигурацию")
+                        .clicked()
+                    {
+                        self.import();
                     }
-                }
-            }
-            if ui.button("Проверить все").clicked() {
-                for profile in self.items() {
-                    if let Some(id) = profile["id"].as_str() {
-                        self.ping.insert(id.to_owned(), core::probe(&profile));
+                    if ui.button("Вставить").clicked() {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Ok(text) = clipboard.get_text() {
+                                self.input = text;
+                            }
+                        }
                     }
-                }
-            }
-        });
+                    if ui.button("Проверить все").clicked() {
+                        for profile in self.items() {
+                            if let Some(id) = profile["id"].as_str() {
+                                self.ping.insert(id.to_owned(), core::probe(&profile));
+                            }
+                        }
+                    }
+                });
+            });
     }
     fn rules(&mut self, ui: &mut egui::Ui) {
         ui.heading("Правила маршрутизации");
         ui.label(
-            RichText::new("Сверху вниз · перетащите строку, чтобы изменить приоритет").color(MUTED),
+            RichText::new(
+                "Правила применяются сверху вниз. Потяните за левый край, чтобы изменить порядок.",
+            )
+            .color(MUTED),
         );
         ui.add_space(10.0);
         let mut rules = self.rule_items();
@@ -503,16 +737,17 @@ impl ForkApp {
                 let mut active = rules[index]["enabled"].as_bool().unwrap_or(true);
                 let row = egui::Frame::new()
                     .fill(CARD)
+                    .stroke(Stroke::new(1.0, BORDER))
                     .corner_radius(9)
-                    .inner_margin(9)
+                    .inner_margin(12)
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             let handle = drag_handle(ui);
                             if handle.drag_started() {
                                 self.dragging_rule = Some(index);
                             }
-                            if ui.checkbox(&mut active, "").changed() {
+                            if ui.checkbox(&mut active, "Включено").changed() {
                                 rules[index]["enabled"] = json!(active);
                                 changed = true;
                             }
@@ -547,7 +782,7 @@ impl ForkApp {
                                         }
                                     }
                                 });
-                            if ui.small_button("X").clicked() {
+                            if ui.small_button("Удалить").clicked() {
                                 remove = Some(index);
                             }
                         });
@@ -569,7 +804,7 @@ impl ForkApp {
                             .add(
                                 egui::Label::new(
                                     RichText::new(if value.is_empty() {
-                                        "Дважды нажмите для ввода"
+                                        "Нажмите, чтобы задать значение"
                                     } else {
                                         &value
                                     })
@@ -584,7 +819,7 @@ impl ForkApp {
                                 .truncate()
                                 .sense(Sense::click()),
                             )
-                            .double_clicked()
+                            .clicked()
                         {
                             self.editing = Some(id.clone());
                         }
@@ -612,7 +847,10 @@ impl ForkApp {
             rules.remove(index);
             changed = true;
         }
-        if ui.button("+ Добавить правило").clicked() {
+        if ui
+            .add(egui::Button::new("Добавить правило").fill(ACCENT))
+            .clicked()
+        {
             let id = uuid::Uuid::new_v4().to_string();
             rules.push(json!({"id":id,"kind":"domain","value":"","target":"xray","enabled":true}));
             self.editing = Some(id);
@@ -645,10 +883,7 @@ impl ForkApp {
             ))
             .color(MUTED),
         );
-        ui.label(
-            RichText::new("Нажмите заголовок для сортировки · правило можно создать из строки")
-                .color(MUTED),
-        );
+        ui.label(RichText::new("Заголовок — сортировка · кнопка в строке — правило").color(MUTED));
         if !self.message.is_empty() {
             ui.add_space(8.0);
             ui.label(RichText::new(&self.message).color(ACCENT));
@@ -786,17 +1021,20 @@ impl ForkApp {
     }
     fn settings(&mut self, ui: &mut egui::Ui) {
         ui.heading("Настройки");
-        ui.label(RichText::new("Поведение приложения при запуске Windows").color(MUTED));
-        ui.add_space(12.0);
+        ui.label(RichText::new("Управление запуском и подключением").color(MUTED));
+        ui.add_space(20.0);
         egui::Frame::new()
             .fill(CARD)
+            .stroke(Stroke::new(1.0, BORDER))
             .corner_radius(12)
-            .inner_margin(18)
+            .inner_margin(20)
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
+                ui.label(RichText::new("При входе в Windows").size(16.0).strong());
+                ui.add_space(7.0);
                 let mut autostart = self.autostart;
                 ui.add_enabled_ui(cfg!(windows), |ui| {
-                    if ui.checkbox(&mut autostart, "Запускать при входе в Windows").changed() {
+                    if ui.checkbox(&mut autostart, "Запускать Fork Lite").changed() {
                         match crate::autostart::set_enabled(autostart) {
                             Ok(()) => {
                                 self.autostart = crate::autostart::is_enabled();
@@ -811,18 +1049,33 @@ impl ForkApp {
                     }
                 });
                 ui.label(
-                    RichText::new("Приложение откроется с правами администратора через Планировщик заданий.")
-                        .color(MUTED),
+                    RichText::new("Приложение откроется с правами администратора.")
+                        .color(MUTED)
+                        .size(12.0),
                 );
-                ui.add_space(14.0);
+            });
+        ui.add_space(12.0);
+        egui::Frame::new()
+            .fill(CARD)
+            .stroke(Stroke::new(1.0, BORDER))
+            .corner_radius(12)
+            .inner_margin(20)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.label(RichText::new("Подключение").size(16.0).strong());
+                ui.add_space(7.0);
                 let mut auto_connect = self.settings["autoConnect"].as_bool().unwrap_or(false);
-                if ui.checkbox(&mut auto_connect, "Подключаться при запуске").changed() {
+                if ui
+                    .checkbox(&mut auto_connect, "Подключаться автоматически")
+                    .changed()
+                {
                     self.settings["autoConnect"] = json!(auto_connect);
                     self.save_settings();
                 }
                 ui.label(
-                    RichText::new("После запуска выберет сервер и включит TUN. Если соединение не удастся, покажет ошибку в окне.")
-                        .color(MUTED),
+                    RichText::new("При запуске выберет сервер и включит TUN.")
+                        .color(MUTED)
+                        .size(12.0),
                 );
             });
     }
@@ -996,37 +1249,32 @@ impl eframe::App for ForkApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(24))
-            .show(ui, |ui| {
-                self.header(ui);
-                if self.tab == Tab::Connections {
-                    ui.add_space(12.0);
-                    self.connections(ui);
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt(self.tab)
-                        .show(ui, |ui| {
-                            ui.add_space(12.0);
-                            match self.tab {
-                                Tab::Servers => self.servers(ui),
-                                Tab::Rules => self.rules(ui),
-                                Tab::Settings => self.settings(ui),
-                                Tab::Connections => unreachable!(),
-                            }
-                            if !self.message.is_empty() {
-                                ui.add_space(12.0);
-                                egui::Frame::new()
-                                    .fill(SURFACE)
-                                    .corner_radius(7)
-                                    .inner_margin(10)
-                                    .show(ui, |ui| {
-                                        ui.label(RichText::new(&self.message).color(ACCENT));
-                                    });
-                            }
-                        });
-                }
-            });
+        if ui.available_width() >= 900.0 {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(BG))
+                .show(ui, |ui| {
+                    egui::Panel::left("fork-sidebar")
+                        .exact_size(194.0)
+                        .resizable(false)
+                        .frame(
+                            egui::Frame::new()
+                                .fill(CARD)
+                                .inner_margin(egui::Margin::symmetric(16, 24))
+                                .stroke(Stroke::new(1.0, BORDER)),
+                        )
+                        .show(ui, |ui| self.sidebar(ui));
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::new().fill(BG).inner_margin(24))
+                        .show(ui, |ui| self.body(ui));
+                });
+        } else {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(BG).inner_margin(20))
+                .show(ui, |ui| {
+                    self.header(ui);
+                    self.body(ui);
+                });
+        }
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 }
