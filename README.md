@@ -4,77 +4,52 @@
 
 # Fork Lite Win
 
-**VLESS-прокси для Windows с правилами маршрутизации и живыми соединениями.**
+**VLESS для Windows с правилами, подписками и живыми соединениями.**
 
-Подписки, выбор сервера, TUN и правила в одном приложении.
+Тёмный интерфейс, TUN, выбор сервера и управление из меню у часов.
 
 ![Windows 10+](https://img.shields.io/badge/Windows-10%2B-20232a?logo=windows&logoColor=white)
 ![x64](https://img.shields.io/badge/сборка-x64-20232a)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-1.100-20232a?logo=rust&logoColor=white)
 
-[**Скачать ForkLiteWin.exe**](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe) · [Исходный код](app.py) · [Сборка](#сборка-из-исходников)
+[**Скачать ForkLiteWin.exe**](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe) · [Исходный код](src) · [Сборка на Mac](#сборка-на-mac)
 
 </div>
 
----
-
 ## Возможности
 
-- **Тёмная тема и значок у часов** — подключение запускается вручную и всегда выключено при старте приложения. Из меню значка можно подключиться, выбрать сервер, открыть окно и выйти.
-- **VLESS** — ссылки `vless://`, Base64-списки, Clash YAML и HTTPS-подписки. Транспорты `tcp`, `ws`, `xhttp`; Reality и TLS.
-- **Правила сверху вниз** — домены, IP-подсети, процессы и порты можно направить через Xray, напрямую или заблокировать.
-- **Активные соединения** — адрес, процесс, выход и объём трафика. Правый клик по строке создаёт правило; служебные соединения sing-box и Xray-core скрыты.
-- **Выбор по задержке** — TCP-пинг всех серверов и автовыбор при включении.
-
-```text
-Приложения Windows
-        │
-        ▼
-   TUN · sing-box
-        │
-        ├─ ваши правила ──► Xray / напрямую / блок
-        └─ остальной трафик ──► выбранный VLESS-сервер
-```
-
-Для `xhttp` и профилей с `flow=xtls-rprx-vision-udp443` приложение запускает Xray-core как локальный SOCKS-движок. Корпоративного VPN в Windows-версии нет. В отличие от [Fork Lite для macOS](https://github.com/piksel-man231/fork_lite), эта версия пока поддерживает только VLESS.
+- **VLESS**: ссылки, Base64-списки, Clash YAML и HTTPS-подписки. Транспорты TCP, WebSocket и XHTTP; TLS и Reality. Для XHTTP и `xtls-rprx-vision-udp443` используется Xray-core.
+- **TUN**: sing-box направляет приложения через выбранный сервер, напрямую или в блок по правилам. Корпоративного VPN в Windows-версии нет.
+- **Правила мышкой**: строки можно перетаскивать; тип и выход выбираются в меню, значение редактируется двойным кликом. Правила применяются сверху вниз.
+- **Соединения**: сортировка по любой колонке, объём в КБ/МБ/ГБ, скорость получения и отдачи. Служебные соединения Xray и sing-box скрыты. Правый клик по строке добавляет правило.
+- **Меню у часов**: показать окно, подключиться или отключиться, переключить сервер и выйти. Закрытие окна оставляет приложение в трее.
+- **Автовыбор сервера**: при подключении измеряется TCP-задержка и выбирается сервер с наименьшим ответом. Опцию можно отключить.
 
 ## Установка
 
-1. [Скачайте ForkLiteWin.exe](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe).
-2. Запустите EXE. Windows сама запросит права администратора через UAC: TUN изменяет системную маршрутизацию.
-3. Вставьте VLESS-ссылку или HTTPS-подписку на вкладке **«Серверы»**. Clash YAML можно добавить через **«Из файла»**.
-4. Включите **Xray**. Закрытие окна оставляет приложение у часов; команда **«Выход»** в меню значка останавливает TUN.
+Скачайте [ForkLiteWin.exe](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe) и запустите. Windows запросит права администратора через UAC: они нужны для TUN. При первом подключении приложение распакует встроенные sing-box, Xray-core и DLL в `%APPDATA%\Fork Lite Win\bin`.
 
-EXE содержит sing-box, Xray-core и нужные им DLL. Сборка не подписана цифровой подписью Windows. Если другой VPN-клиент уже использует TUN, выключите его перед подключением Fork Lite Win.
+Вставьте VLESS-ссылку, список, Clash YAML или HTTPS-адрес подписки в поле на вкладке «Серверы», нажмите «Добавить» и «Подключить». Сборка не подписана цифровой подписью Windows.
 
-## Правила
+## Сборка на Mac
 
-Правила применяются **сверху вниз**. Если совпадений нет, трафик идёт через выбранный сервер. Перетащите строку мышкой, чтобы изменить приоритет. Двойной клик по полю открывает редактирование; клик по отметке включает или выключает правило, а `×` удаляет его.
+Требуются macOS, Homebrew и 64-битный Windows target Rust. **GitHub Actions не участвует в сборке**: скрипт запускается на вашем Mac и создаёт готовый EXE локально.
 
-| Условие | Пример | Выход |
-| --- | --- | --- |
-| Домен или поддомены | `example.com` | Xray / напрямую / блок |
-| Домен содержит | `example` | Xray / напрямую / блок |
-| IP-подсеть | `192.168.0.0/16` | Xray / напрямую / блок |
-| Процесс | `browser.exe` | Xray / напрямую / блок |
-| Порт | `443` | Xray / напрямую / блок |
-
-Новая установка добавляет прямые правила для локальных IPv4-подсетей и Tailscale-диапазона. Их можно выключить или удалить.
-
-## Сборка из исходников
-
-Понадобятся Windows 10+, Python 3.12 и PowerShell. Положите в `bin/` файлы `sing-box.exe`, `libcronet.dll`, `xray.exe` и `wintun.dll` из официальных архивов [sing-box 1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4) и [Xray-core 26.11.9](https://github.com/XTLS/Xray-core/releases/tag/v26.11.9). Затем:
-
-```powershell
-python -m unittest discover -s tests -v
-python app.py --self-test
-.\build.ps1
-python scripts/check_package.py dist/ForkLiteWin.exe
+```bash
+brew install rustup mingw-w64
+rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu
+./scripts/build-windows-macos.sh
 ```
 
-Готовый файл — `dist\ForkLiteWin.exe`. [GitHub Actions](.github/workflows/windows.yml) выполняет эти же шаги на Windows runner и сохраняет EXE как артефакт. Публичный релиз содержит готовый EXE.
+Результат: `dist/ForkLiteWin.exe`. Скрипт сам скачивает официальные архивы [sing-box 1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4) и [Xray-core 26.11.9](https://github.com/XTLS/Xray-core/releases/tag/v26.11.9), проверяет ZIP, запускает тесты и кросс-компилирует Rust-приложение. Windows-движки встроены в один EXE. На Mac можно проверить логику и формат EXE; реальное TUN-подключение проверяется на Windows.
 
-## Файлы приложения
+Опубликовать локальную сборку в релиз GitHub после коммита и `git push`:
+
+```bash
+./scripts/publish-windows-macos.sh v0.4.0
+```
+
+## Данные
 
 | Данные | Путь |
 | --- | --- |
@@ -82,16 +57,12 @@ python scripts/check_package.py dist/ForkLiteWin.exe
 | Серверы и подписки | `%APPDATA%\Fork Lite Win\profiles.json` |
 | Журнал ядра | `%APPDATA%\Fork Lite Win\core.log` |
 
-Профили хранятся локально. Пароли и ключи VLESS находятся в `profiles.json`, поэтому доступ к этому файлу должен быть ограничен вашей учётной записью.
-
-## Проверка
-
-Тесты проверяют импорт, правила, подписки и генерацию конфигов. Windows-сборка в CI проверяет движки командами `sing-box check` и `xray run -test`, встроенные файлы и манифест `requireAdministrator`. Реальное TUN-подключение к серверу автоматические тесты не проверяют.
+Формат файлов совместим с прежней Python-версией. Профили хранятся локально и могут содержать секреты VLESS. История Python-версии остаётся в Git.
 
 ---
 
 <div align="center">
 
-Python · [sing-box](https://sing-box.sagernet.org/) · [Xray-core](https://github.com/XTLS/Xray-core) · [Лицензии компонентов](Licenses)
+[Rust](https://www.rust-lang.org/) · [sing-box](https://sing-box.sagernet.org/) · [Xray-core](https://github.com/XTLS/Xray-core) · [Лицензии компонентов](Licenses) · [Fork Lite для macOS](https://github.com/piksel-man231/fork_lite)
 
 </div>

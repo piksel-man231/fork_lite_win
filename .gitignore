@@ -5,3 +5,6 @@ dist/
 bin/
 *.spec
 .DS_Store
+target/
+vendor/
+dist/
