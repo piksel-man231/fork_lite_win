@@ -44,7 +44,7 @@ pub fn write_json(name: &str, value: &Value) -> Result<(), String> {
 pub fn default_settings() -> Value {
     let rules: Vec<Value> = ["100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
         .iter().map(|value| json!({"id": uuid::Uuid::new_v4().to_string(), "kind": "ipCidr", "value": value, "target": "direct", "enabled": true})).collect();
-    json!({"autoBest": true, "rules": rules})
+    json!({"autoBest": true, "autoConnect": false, "rules": rules})
 }
 
 fn string<'a>(value: &'a Value, key: &str) -> &'a str {
