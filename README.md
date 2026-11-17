@@ -49,7 +49,7 @@ rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu
 Опубликовать локальную сборку в релиз GitHub после коммита и `git push`:
 
 ```bash
-./scripts/publish-windows-macos.sh v0.5.0
+./scripts/publish-windows-macos.sh v0.5.1
 ```
 
 ## Данные

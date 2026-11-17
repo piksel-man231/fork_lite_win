@@ -646,13 +646,15 @@ impl ForkApp {
             .color(MUTED),
         );
         ui.label(
-            RichText::new(
-                "Нажмите заголовок для сортировки · правый клик по строке создаёт правило",
-            )
-            .color(MUTED),
+            RichText::new("Нажмите заголовок для сортировки · правило можно создать из строки")
+                .color(MUTED),
         );
+        if !self.message.is_empty() {
+            ui.add_space(8.0);
+            ui.label(RichText::new(&self.message).color(ACCENT));
+        }
         ui.add_space(10.0);
-        let host_width = (ui.available_width() - 700.0).max(220.0);
+        let host_width = (ui.available_width() - 735.0).max(220.0);
         let columns = [
             ("host", "Адрес", host_width),
             ("process", "Процесс", 140.0),
@@ -678,7 +680,11 @@ impl ForkApp {
         }
         let mut quick_rule = None;
         egui::ScrollArea::horizontal().show(ui, |ui| {
-            ui.set_min_width(columns.iter().map(|(_, _, width)| width).sum::<f32>() + 95.0);
+            ui.set_min_width(
+                columns.iter().map(|(_, _, width)| width).sum::<f32>()
+                    + ui.spacing().item_spacing.x * (columns.len() - 1) as f32
+                    + 10.0,
+            );
             ui.horizontal(|ui| {
                 for (key, label, width) in columns {
                     let response = ui.add_sized(
@@ -694,9 +700,16 @@ impl ForkApp {
                 }
             });
             ui.separator();
+            let list_height = ui.available_height().max(80.0);
             egui::ScrollArea::vertical()
-                .max_height(470.0)
+                .max_height(list_height)
+                .min_scrolled_height(list_height)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    if self.connections.is_empty() {
+                        ui.add_space(35.0);
+                        ui.label(RichText::new("Активных соединений пока нет").color(MUTED));
+                    }
                     for item in &self.connections {
                         let metadata = &item["metadata"];
                         let host = metadata["host"]
@@ -731,7 +744,25 @@ impl ForkApp {
                             .inner_margin(5)
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    for (idx, cell) in cells.iter().enumerate() {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(columns[0].2, 24.0),
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.menu_button("Правило", |ui| {
+                                                quick_rule_menu(
+                                                    ui,
+                                                    host,
+                                                    &process,
+                                                    &mut quick_rule,
+                                                );
+                                            });
+                                            ui.add_sized(
+                                                [columns[0].2 - 85.0, 24.0],
+                                                egui::Label::new(&cells[0]).truncate(),
+                                            );
+                                        },
+                                    );
+                                    for (idx, cell) in cells.iter().enumerate().skip(1) {
                                         ui.add_sized(
                                             [columns[idx].2, 24.0],
                                             egui::Label::new(cell).truncate(),
@@ -740,34 +771,8 @@ impl ForkApp {
                                 });
                             })
                             .response;
-                        response.context_menu(|ui| {
-                            ui.label("Направить адрес");
-                            let address_rule = if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-                                (
-                                    "ipCidr",
-                                    format!("{ip}/{}", if ip.is_ipv4() { 32 } else { 128 }),
-                                )
-                            } else {
-                                ("domain", host.to_owned())
-                            };
-                            for (target, label) in [
-                                ("xray", "Через Xray"),
-                                ("direct", "Напрямую"),
-                                ("block", "Блокировать"),
-                            ] {
-                                if ui.button(label).clicked() {
-                                    quick_rule =
-                                        Some((address_rule.0, address_rule.1.clone(), target));
-                                    ui.close();
-                                }
-                            }
-                            if !process.is_empty() {
-                                ui.separator();
-                                if ui.button("Правило для процесса").clicked() {
-                                    quick_rule = Some(("processName", process.clone(), "direct"));
-                                    ui.close();
-                                }
-                            }
+                        response.container_context_menu(|ui| {
+                            quick_rule_menu(ui, host, &process, &mut quick_rule);
                         });
                         ui.add_space(4.0);
                     }
@@ -777,12 +782,6 @@ impl ForkApp {
             self.settings["rules"].as_array_mut().unwrap().push(json!({"id":uuid::Uuid::new_v4().to_string(),"kind":kind,"value":value,"target":target,"enabled":true}));
             self.save_settings();
             self.message = "Правило добавлено. Переподключитесь для применения".into();
-        }
-        if self.connections.is_empty() {
-            ui.add_space(35.0);
-            ui.centered_and_justified(|ui| {
-                ui.label(RichText::new("Активных соединений пока нет").color(MUTED));
-            });
         }
     }
     fn settings(&mut self, ui: &mut egui::Ui) {
@@ -930,6 +929,51 @@ fn target_label(key: &str) -> &str {
     }
 }
 
+fn quick_rule_menu(
+    ui: &mut egui::Ui,
+    host: &str,
+    process: &str,
+    quick_rule: &mut Option<(&'static str, String, &'static str)>,
+) {
+    if host != "—" {
+        let (kind, value) = if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            (
+                "ipCidr",
+                format!("{ip}/{}", if ip.is_ipv4() { 32 } else { 128 }),
+            )
+        } else {
+            ("domain", host.to_owned())
+        };
+        ui.label(format!("Адрес: {host}"));
+        for (target, label) in [
+            ("xray", "Через Xray"),
+            ("direct", "Напрямую"),
+            ("block", "Блокировать"),
+        ] {
+            if ui.button(label).clicked() {
+                *quick_rule = Some((kind, value.clone(), target));
+                ui.close();
+            }
+        }
+    }
+    if !process.is_empty() {
+        if host != "—" {
+            ui.separator();
+        }
+        ui.label(format!("Процесс: {process}"));
+        for (target, label) in [
+            ("xray", "Через Xray"),
+            ("direct", "Напрямую"),
+            ("block", "Блокировать"),
+        ] {
+            if ui.button(label).clicked() {
+                *quick_rule = Some(("processName", process.to_owned(), target));
+                ui.close();
+            }
+        }
+    }
+}
+
 impl eframe::App for ForkApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.maybe_auto_connect();
@@ -956,27 +1000,32 @@ impl eframe::App for ForkApp {
             .frame(egui::Frame::new().fill(BG).inner_margin(24))
             .show(ui, |ui| {
                 self.header(ui);
-                egui::ScrollArea::vertical()
-                    .id_salt(self.tab)
-                    .show(ui, |ui| {
-                        ui.add_space(12.0);
-                        match self.tab {
-                            Tab::Servers => self.servers(ui),
-                            Tab::Rules => self.rules(ui),
-                            Tab::Connections => self.connections(ui),
-                            Tab::Settings => self.settings(ui),
-                        }
-                        if !self.message.is_empty() {
+                if self.tab == Tab::Connections {
+                    ui.add_space(12.0);
+                    self.connections(ui);
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt(self.tab)
+                        .show(ui, |ui| {
                             ui.add_space(12.0);
-                            egui::Frame::new()
-                                .fill(SURFACE)
-                                .corner_radius(7)
-                                .inner_margin(10)
-                                .show(ui, |ui| {
-                                    ui.label(RichText::new(&self.message).color(ACCENT));
-                                });
-                        }
-                    });
+                            match self.tab {
+                                Tab::Servers => self.servers(ui),
+                                Tab::Rules => self.rules(ui),
+                                Tab::Settings => self.settings(ui),
+                                Tab::Connections => unreachable!(),
+                            }
+                            if !self.message.is_empty() {
+                                ui.add_space(12.0);
+                                egui::Frame::new()
+                                    .fill(SURFACE)
+                                    .corner_radius(7)
+                                    .inner_margin(10)
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(&self.message).color(ACCENT));
+                                    });
+                            }
+                        });
+                }
             });
         ctx.request_repaint_after(Duration::from_millis(500));
     }
