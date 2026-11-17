@@ -12,7 +12,7 @@
 ![x64](https://img.shields.io/badge/сборка-x64-20232a)
 ![Rust](https://img.shields.io/badge/Rust-1.100-20232a?logo=rust&logoColor=white)
 
-[**Скачать ForkLiteWin.exe**](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe) · [Исходный код](src) · [Сборка на Mac](#сборка-на-mac)
+[**Скачать ForkLiteWin.exe**](https://github.com/piksel-man231/fork_lite_win/releases/latest/download/ForkLiteWin.exe) · [Исходный код](src) · [Версия для macOS](https://github.com/piksel-man231/fork_lite)
 
 </div>
 
@@ -35,24 +35,6 @@
 
 Вставьте VLESS-ссылку, список, Clash YAML или HTTPS-адрес подписки в поле на вкладке «Серверы», нажмите «Добавить» и «Подключить». Сборка не подписана цифровой подписью Windows.
 
-## Сборка на Mac
-
-Требуются macOS, Homebrew и 64-битный Windows target Rust. **GitHub Actions не участвует в сборке**: скрипт запускается на вашем Mac и создаёт готовый EXE локально.
-
-```bash
-brew install rustup mingw-w64
-rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu
-./scripts/build-windows-macos.sh
-```
-
-Результат: `dist/ForkLiteWin.exe`. Скрипт сам скачивает официальные архивы [sing-box 1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4) и [Xray-core 26.11.9](https://github.com/XTLS/Xray-core/releases/tag/v26.11.9), проверяет ZIP, запускает тесты и кросс-компилирует Rust-приложение. Windows-движки встроены в один EXE. На Mac можно проверить логику и формат EXE; реальное TUN-подключение проверяется на Windows.
-
-Опубликовать локальную сборку в релиз GitHub после коммита и `git push`:
-
-```bash
-./scripts/publish-windows-macos.sh v0.6.0
-```
-
 ## Данные
 
 | Данные | Путь |
@@ -67,6 +49,6 @@ rustup toolchain install stable --profile minimal --target x86_64-pc-windows-gnu
 
 <div align="center">
 
-[Rust](https://www.rust-lang.org/) · [sing-box](https://sing-box.sagernet.org/) · [Xray-core](https://github.com/XTLS/Xray-core) · [Лицензии компонентов](Licenses) · [Fork Lite для macOS](https://github.com/piksel-man231/fork_lite)
+[Rust](https://www.rust-lang.org/) · [sing-box](https://sing-box.sagernet.org/) · [Xray-core](https://github.com/XTLS/Xray-core) · [Лицензии компонентов](Licenses)
 
 </div>
