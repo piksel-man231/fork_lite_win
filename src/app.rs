@@ -889,7 +889,10 @@ impl ForkApp {
             ui.label(RichText::new(&self.message).color(ACCENT));
         }
         ui.add_space(10.0);
-        let host_width = (ui.available_width() - 735.0).max(220.0);
+        let column_gap = ui.spacing().item_spacing.x;
+        let fixed_width = 140.0 + 95.0 + 95.0 + 95.0 + 105.0 + 105.0;
+        let host_width = (ui.available_width() - fixed_width - column_gap * 6.0 - 20.0)
+            .max(220.0);
         let columns = [
             ("host", "Адрес", host_width),
             ("process", "Процесс", 140.0),
@@ -899,6 +902,9 @@ impl ForkApp {
             ("downSpeed", "Вход/с", 105.0),
             ("upSpeed", "Выход/с", 105.0),
         ];
+        let table_width = columns.iter().map(|(_, _, width)| width).sum::<f32>()
+            + column_gap * (columns.len() - 1) as f32
+            + 10.0;
         let numeric = ["download", "upload", "downSpeed", "upSpeed"].contains(&self.sort.as_str());
         self.connections.sort_by(|a, b| {
             if numeric {
@@ -915,11 +921,7 @@ impl ForkApp {
         }
         let mut quick_rule = None;
         egui::ScrollArea::horizontal().show(ui, |ui| {
-            ui.set_min_width(
-                columns.iter().map(|(_, _, width)| width).sum::<f32>()
-                    + ui.spacing().item_spacing.x * (columns.len() - 1) as f32
-                    + 10.0,
-            );
+            ui.set_min_width(table_width);
             ui.horizontal(|ui| {
                 for (key, label, width) in columns {
                     let response = ui.add_sized(
@@ -941,6 +943,7 @@ impl ForkApp {
                 .min_scrolled_height(list_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    ui.set_min_width(table_width);
                     if self.connections.is_empty() {
                         ui.add_space(35.0);
                         ui.label(RichText::new("Активных соединений пока нет").color(MUTED));
@@ -978,11 +981,16 @@ impl ForkApp {
                             .corner_radius(6)
                             .inner_margin(5)
                             .show(ui, |ui| {
+                                ui.set_min_width(table_width - 10.0);
                                 ui.horizontal(|ui| {
                                     ui.allocate_ui_with_layout(
                                         egui::vec2(columns[0].2, 24.0),
-                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
+                                            ui.add_sized(
+                                                [columns[0].2 - 90.0, 24.0],
+                                                egui::Label::new(&cells[0]).truncate(),
+                                            );
                                             ui.menu_button("Правило", |ui| {
                                                 quick_rule_menu(
                                                     ui,
@@ -991,10 +999,6 @@ impl ForkApp {
                                                     &mut quick_rule,
                                                 );
                                             });
-                                            ui.add_sized(
-                                                [columns[0].2 - 85.0, 24.0],
-                                                egui::Label::new(&cells[0]).truncate(),
-                                            );
                                         },
                                     );
                                     for (idx, cell) in cells.iter().enumerate().skip(1) {

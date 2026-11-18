@@ -570,14 +570,17 @@ pub fn probe(profile: &Value) -> Option<u128> {
 }
 
 pub fn process_name(connection: &Value) -> String {
-    string(&connection["metadata"], "processPath")
-        .split(" (")
-        .next()
-        .unwrap_or("")
+    let path = string(&connection["metadata"], "processPath");
+    let name = path
         .rsplit(['\\', '/'])
         .next()
-        .unwrap_or("")
-        .to_owned()
+        .unwrap_or("");
+    if let Some((stem, suffix)) = name.rsplit_once(" (") {
+        if suffix.ends_with(')') && suffix[..suffix.len() - 1].chars().all(|c| c.is_ascii_digit()) {
+            return stem.to_owned();
+        }
+    }
+    name.to_owned()
 }
 pub fn visible_connections(items: &[Value]) -> Vec<Value> {
     items
@@ -679,6 +682,13 @@ mod tests {
         assert!(
             visible_connections(&[json!({"metadata":{"processPath":"C:\\xray.exe"}})]).is_empty()
         );
+    }
+    #[test]
+    fn process_name_keeps_parentheses_in_directory() {
+        let item = json!({"metadata":{"processPath":"C:\\Program Files (x86)\\Steam\\steam.exe (1234)"}});
+        assert_eq!(process_name(&item), "steam.exe");
+        let item = json!({"metadata":{"processPath":"C:\\Program Files (x86)\\Steam\\steam.exe"}});
+        assert_eq!(process_name(&item), "steam.exe");
     }
     #[test]
     fn route_rule_uses_selected_field_and_target() {
