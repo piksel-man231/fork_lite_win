@@ -567,111 +567,6 @@ impl ForkApp {
                     });
                 });
             });
-        ui.add_space(25.0);
-        ui.horizontal(|ui| {
-            ui.heading("Серверы");
-            ui.add_space(16.0);
-            let mut auto = self.settings["autoBest"].as_bool().unwrap_or(true);
-            if ui
-                .checkbox(&mut auto, "Автовыбор")
-                .on_hover_text("При подключении выбрать сервер с наименьшей задержкой")
-                .changed()
-            {
-                self.settings["autoBest"] = json!(auto);
-                self.save_settings();
-            }
-        });
-        if self.items().is_empty() {
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new("Пока нет серверов. Добавьте VLESS-ссылку или подписку ниже.")
-                    .color(MUTED),
-            );
-        }
-        egui::ScrollArea::vertical()
-            .max_height(330.0)
-            .show(ui, |ui| {
-                for profile in self.items() {
-                    let id = profile["id"].as_str().unwrap_or("").to_owned();
-                    let selected = self.store["selected"] == profile["id"];
-                    egui::Frame::new()
-                        .fill(if selected {
-                            Color32::from_rgb(34, 43, 57)
-                        } else {
-                            CARD
-                        })
-                        .stroke(Stroke::new(
-                            1.0,
-                            if selected {
-                                Color32::from_rgb(67, 105, 156)
-                            } else {
-                                BORDER
-                            },
-                        ))
-                        .corner_radius(10)
-                        .inner_margin(10)
-                        .show(ui, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                let name_width = (ui.available_width() - 230.0).max(100.0);
-                                if ui
-                                    .add_sized(
-                                        [name_width, 31.0],
-                                        egui::Button::new(
-                                            RichText::new(
-                                                profile["name"].as_str().unwrap_or("Сервер"),
-                                            )
-                                            .size(14.0)
-                                            .strong(),
-                                        )
-                                        .selected(selected)
-                                        .truncate(),
-                                    )
-                                    .clicked()
-                                {
-                                    self.store["selected"] = json!(id);
-                                    self.save_store();
-                                    if running {
-                                        self.runtime.stop();
-                                        self.message = "Сервер изменён. Подключите снова".into();
-                                    }
-                                }
-                                let ping = self
-                                    .ping
-                                    .get(&id)
-                                    .and_then(|v| *v)
-                                    .map(|ms| format!("{ms} мс"))
-                                    .unwrap_or("—".into());
-                                ui.label(RichText::new(ping).color(MUTED));
-                                if ui
-                                    .small_button("Пинг")
-                                    .on_hover_text("Проверить задержку")
-                                    .clicked()
-                                {
-                                    self.ping.insert(id.clone(), core::probe(&profile));
-                                }
-                                if ui
-                                    .small_button("Удалить")
-                                    .on_hover_text("Удалить сервер")
-                                    .clicked()
-                                {
-                                    self.store["items"]
-                                        .as_array_mut()
-                                        .unwrap()
-                                        .retain(|v| v["id"] != id);
-                                    if self.store["selected"] == id {
-                                        self.store["selected"] = self.store["items"]
-                                            .as_array()
-                                            .and_then(|v| v.first())
-                                            .map(|v| v["id"].clone())
-                                            .unwrap_or(Value::Null);
-                                    }
-                                    self.save_store();
-                                }
-                            });
-                        });
-                    ui.add_space(5.0);
-                }
-            });
         ui.add_space(16.0);
         egui::CollapsingHeader::new("Добавить сервер или подписку")
             .default_open(self.items().is_empty())
@@ -717,6 +612,105 @@ impl ForkApp {
                     }
                 });
             });
+        ui.add_space(25.0);
+        ui.horizontal(|ui| {
+            ui.heading("Серверы");
+            ui.add_space(16.0);
+            let mut auto = self.settings["autoBest"].as_bool().unwrap_or(true);
+            if ui
+                .checkbox(&mut auto, "Автовыбор")
+                .on_hover_text("При подключении выбрать сервер с наименьшей задержкой")
+                .changed()
+            {
+                self.settings["autoBest"] = json!(auto);
+                self.save_settings();
+            }
+        });
+        if self.items().is_empty() {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Пока нет серверов. Добавьте VLESS-ссылку или подписку выше.")
+                    .color(MUTED),
+            );
+        }
+        for profile in self.items() {
+            let id = profile["id"].as_str().unwrap_or("").to_owned();
+            let selected = self.store["selected"] == profile["id"];
+            egui::Frame::new()
+                .fill(if selected {
+                    Color32::from_rgb(34, 43, 57)
+                } else {
+                    CARD
+                })
+                .stroke(Stroke::new(
+                    1.0,
+                    if selected {
+                        Color32::from_rgb(67, 105, 156)
+                    } else {
+                        BORDER
+                    },
+                ))
+                .corner_radius(10)
+                .inner_margin(10)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        let name_width = (ui.available_width() - 230.0).max(100.0);
+                        if ui
+                            .add_sized(
+                                [name_width, 31.0],
+                                egui::Button::new(
+                                    RichText::new(profile["name"].as_str().unwrap_or("Сервер"))
+                                        .size(14.0)
+                                        .strong(),
+                                )
+                                .selected(selected)
+                                .truncate(),
+                            )
+                            .clicked()
+                        {
+                            self.store["selected"] = json!(id);
+                            self.save_store();
+                            if running {
+                                self.runtime.stop();
+                                self.message = "Сервер изменён. Подключите снова".into();
+                            }
+                        }
+                        let ping = self
+                            .ping
+                            .get(&id)
+                            .and_then(|v| *v)
+                            .map(|ms| format!("{ms} мс"))
+                            .unwrap_or("—".into());
+                        ui.label(RichText::new(ping).color(MUTED));
+                        if ui
+                            .small_button("Пинг")
+                            .on_hover_text("Проверить задержку")
+                            .clicked()
+                        {
+                            self.ping.insert(id.clone(), core::probe(&profile));
+                        }
+                        if ui
+                            .small_button("Удалить")
+                            .on_hover_text("Удалить сервер")
+                            .clicked()
+                        {
+                            self.store["items"]
+                                .as_array_mut()
+                                .unwrap()
+                                .retain(|v| v["id"] != id);
+                            if self.store["selected"] == id {
+                                self.store["selected"] = self.store["items"]
+                                    .as_array()
+                                    .and_then(|v| v.first())
+                                    .map(|v| v["id"].clone())
+                                    .unwrap_or(Value::Null);
+                            }
+                            self.save_store();
+                        }
+                    });
+                });
+            ui.add_space(5.0);
+        }
     }
     fn rules(&mut self, ui: &mut egui::Ui) {
         ui.heading("Правила маршрутизации");
